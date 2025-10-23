@@ -1,28 +1,17 @@
-using Calculator.Server.Extensions;
-using Calculator.Server.Services;
-using Microsoft.AspNetCore.Server.Kestrel.Core;
-using Microsoft.AspNetCore.Server.Kestrel.Https;
-using System.Security.Cryptography.X509Certificates;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
-var builder = WebApplication.CreateBuilder(args);
-
-// Configure Kestrel for mTLS
-// Configure Kestrel to use HTTP/2 without TLS for development
-builder.WebHost.ConfigureKestrel(options =>
-{
-    options.ListenAnyIP(5001, listenOptions =>
+var host = Host.CreateDefaultBuilder(args)
+    .ConfigureServices((context, services) =>
     {
-        listenOptions.Protocols = HttpProtocols.Http2;
-    });
-});
+        // RabbitMQ services will be added here
+    })
+    .Build();
 
-// Add services to the container.
-builder.Services.AddCalculatorServices();
+var logger = host.Services.GetRequiredService<ILogger<Program>>();
+logger.LogInformation("Calculator Server starting...");
 
-var app = builder.Build();
+// RabbitMQ consumer logic will be implemented here
 
-// Configure the HTTP request pipeline.
-app.MapGrpcService<CalculatorServiceImpl>();
-app.MapGet("/", () => "Communication with gRPC endpoints must be made through a gRPC client. To learn how to create a client, visit: https://go.microsoft.com/fwlink/?linkid=2086909");
-
-app.Run();
+await host.RunAsync();
