@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+option csharp_namespace = "Calculator.Server";
+
+package calculator;
+
+// The calculator service definition.
+service CalculatorService {
+  // Adds two numbers
+  rpc Add (CalculateRequest) returns (CalculateReply);
+  // Subtracts second number from first
+  rpc Subtract (CalculateRequest) returns (CalculateReply);
+  // Multiplies two numbers
+  rpc Multiply (CalculateRequest) returns (CalculateReply);
+  // Divides first number by second
+  rpc Divide (CalculateRequest) returns (CalculateReply);
+}
+
+// The request message containing two numbers for calculation.
+message CalculateRequest {
+  double number1 = 1;
+  double number2 = 2;
+}
+
+// The response message containing the result.
+message CalculateReply {
+  double result = 1;
+}

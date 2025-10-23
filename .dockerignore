@@ -1,0 +1,13 @@
+# .NET Core
+**/bin/
+**/obj/
+**/.vs/
+
+# Git
+.git
+.gitignore
+
+# Docker
+**/Dockerfile*
+**/.docker
+docker-compose*.yml
