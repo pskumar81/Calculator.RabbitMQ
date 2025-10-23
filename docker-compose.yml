@@ -1,31 +1,82 @@
-version: '3.8'
-
 services:
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: calculator-rabbitmq
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI port
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - calculator-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Calculator Server (RabbitMQ Consumer)
   calculator-server:
     build:
       context: .
       dockerfile: Calculator.Server/Dockerfile
-    ports:
-      - "5001:5001"
+    container_name: calculator-server
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ASPNETCORE_URLS=http://+:5001
+      - DOTNET_ENVIRONMENT=Development
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=guest
+      - RABBITMQ_PASSWORD=guest
+      - RABBITMQ_VHOST=/
     networks:
       - calculator-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # Calculator Client (RabbitMQ Publisher)
   calculator-client:
     build:
       context: .
       dockerfile: Calculator.Client/Dockerfile
+    container_name: calculator-client
     depends_on:
-      - calculator-server
+      rabbitmq:
+        condition: service_healthy
+      calculator-server:
+        condition: service_started
     environment:
-      - SERVER_URL=http://calculator-server:5001
+      - DOTNET_ENVIRONMENT=Development
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=guest
+      - RABBITMQ_PASSWORD=guest
+      - RABBITMQ_VHOST=/
     stdin_open: true  # docker run -i
     tty: true        # docker run -t
     networks:
       - calculator-network
+    restart: "no"  # Don't restart client automatically
+    profiles:
+      - client  # Optional profile to run client separately
+
+volumes:
+  rabbitmq_data:
+    driver: local
 
 networks:
   calculator-network:
     driver: bridge
+    name: calculator-network

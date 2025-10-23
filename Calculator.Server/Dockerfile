@@ -12,8 +12,20 @@ RUN dotnet build "Calculator.Server/Calculator.Server.csproj" -c Release -o /app
 FROM build AS publish
 RUN dotnet publish "Calculator.Server/Calculator.Server.csproj" -c Release -o /app/publish
 
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+# Use runtime image for console application instead of aspnet
+FROM mcr.microsoft.com/dotnet/runtime:9.0 AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-EXPOSE 5001
+
+# Copy configuration files
+COPY Calculator.Server/appsettings.json .
+COPY Calculator.Server/appsettings.Development.json .
+COPY Calculator.Server/appsettings.Docker.json .
+
+# Set environment to use Docker configuration
+ENV DOTNET_ENVIRONMENT=Docker
+
+# No need to expose ports for RabbitMQ-based communication
+# Health check can be added later if needed
+
 ENTRYPOINT ["dotnet", "Calculator.Server.dll"]

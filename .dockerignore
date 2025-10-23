@@ -6,8 +6,45 @@
 # Git
 .git
 .gitignore
+.gitattributes
 
 # Docker
 **/Dockerfile*
 **/.docker
 docker-compose*.yml
+
+# Documentation
+README.md
+LICENSE
+*.md
+
+# IDE files
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+
+# Scripts
+*.sh
+*.bat
+
+# Certificates
+*.pfx
+*.p12
+*.key
+*.pem
+certs/
+
+# Temporary files
+*.tmp
+*.temp

@@ -15,4 +15,13 @@ RUN dotnet publish "Calculator.Client/Calculator.Client.csproj" -c Release -o /a
 FROM mcr.microsoft.com/dotnet/runtime:9.0 AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+
+# Copy configuration files
+COPY Calculator.Client/appsettings.json .
+COPY Calculator.Client/appsettings.Development.json .
+COPY Calculator.Client/appsettings.Docker.json .
+
+# Set environment to use Docker configuration
+ENV DOTNET_ENVIRONMENT=Docker
+
 ENTRYPOINT ["dotnet", "Calculator.Client.dll"]
