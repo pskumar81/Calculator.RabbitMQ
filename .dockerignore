@@ -38,13 +38,6 @@ TestResults/
 *.sh
 *.bat
 
-# Certificates
-*.pfx
-*.p12
-*.key
-*.pem
-certs/
-
 # Temporary files
 *.tmp
 *.temp
