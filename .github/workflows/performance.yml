@@ -1,0 +1,172 @@
+name: Performance Tests
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  schedule:
+    # Run performance tests weekly on Sundays at 3 AM UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+jobs:
+  performance-test:
+    runs-on: ubuntu-latest
+    
+    services:
+      rabbitmq:
+        image: rabbitmq:3.13-management
+        ports:
+          - 5672:5672
+          - 15672:15672
+        env:
+          RABBITMQ_DEFAULT_USER: guest
+          RABBITMQ_DEFAULT_PASS: guest
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 5
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 9.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Start Calculator Server
+      run: |
+        cd Calculator.Server
+        dotnet run --configuration Release &
+        echo "SERVER_PID=$!" >> $GITHUB_ENV
+        sleep 10  # Give server time to start
+
+    - name: Create Performance Test Script
+      run: |
+        cat << 'EOF' > performance_test.cs
+        using Calculator.Client.Extensions;
+        using Calculator.Client.Services.Interfaces;
+        using Microsoft.Extensions.DependencyInjection;
+        using Microsoft.Extensions.Hosting;
+        using Microsoft.Extensions.Logging;
+        using System.Diagnostics;
+        
+        var host = Host.CreateDefaultBuilder()
+            .ConfigureServices((context, services) =>
+            {
+                services.AddCalculatorClientServices(context.Configuration);
+                services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Warning));
+            })
+            .Build();
+        
+        var calculatorService = host.Services.GetRequiredService<ICalculatorClientService>();
+        var logger = host.Services.GetRequiredService<ILogger<Program>>();
+        
+        const int iterations = 1000;
+        const int concurrentClients = 10;
+        
+        Console.WriteLine($"Starting performance test: {iterations} operations with {concurrentClients} concurrent clients");
+        
+        var stopwatch = Stopwatch.StartNew();
+        var tasks = new List<Task>();
+        
+        for (int client = 0; client < concurrentClients; client++)
+        {
+            tasks.Add(Task.Run(async () =>
+            {
+                using var clientService = host.Services.GetRequiredService<ICalculatorClientService>();
+                var random = new Random();
+                
+                for (int i = 0; i < iterations / concurrentClients; i++)
+                {
+                    try
+                    {
+                        var num1 = random.NextDouble() * 1000;
+                        var num2 = random.NextDouble() * 1000;
+                        
+                        switch (i % 4)
+                        {
+                            case 0:
+                                await clientService.AddAsync(num1, num2);
+                                break;
+                            case 1:
+                                await clientService.SubtractAsync(num1, num2);
+                                break;
+                            case 2:
+                                await clientService.MultiplyAsync(num1, num2);
+                                break;
+                            case 3:
+                                if (num2 != 0)
+                                    await clientService.DivideAsync(num1, num2);
+                                break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error in operation {i}: {ex.Message}");
+                    }
+                }
+            }));
+        }
+        
+        await Task.WhenAll(tasks);
+        stopwatch.Stop();
+        
+        var totalTime = stopwatch.ElapsedMilliseconds;
+        var throughput = (double)iterations / totalTime * 1000; // operations per second
+        
+        Console.WriteLine($"Performance Test Results:");
+        Console.WriteLine($"Total time: {totalTime}ms");
+        Console.WriteLine($"Average time per operation: {(double)totalTime / iterations:F2}ms");
+        Console.WriteLine($"Throughput: {throughput:F2} operations/second");
+        
+        // Performance thresholds
+        const double maxAvgTimeMs = 100; // 100ms max average per operation
+        const double minThroughput = 10; // 10 operations/second minimum
+        
+        if (totalTime / iterations > maxAvgTimeMs)
+        {
+            Console.WriteLine($"❌ Performance test FAILED: Average time {(double)totalTime / iterations:F2}ms exceeds threshold {maxAvgTimeMs}ms");
+            Environment.Exit(1);
+        }
+        
+        if (throughput < minThroughput)
+        {
+            Console.WriteLine($"❌ Performance test FAILED: Throughput {throughput:F2} ops/sec below threshold {minThroughput} ops/sec");
+            Environment.Exit(1);
+        }
+        
+        Console.WriteLine("✅ Performance test PASSED");
+        calculatorService.Dispose();
+        EOF
+
+    - name: Run Performance Tests
+      run: |
+        cd Calculator.Client
+        dotnet run --configuration Release -- < ../performance_test.cs
+        
+    - name: Cleanup
+      if: always()
+      run: |
+        if [ ! -z "$SERVER_PID" ]; then
+          kill $SERVER_PID || true
+        fi
+
+    - name: Upload Performance Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: performance-results
+        path: |
+          performance-*.log
+          performance-*.json

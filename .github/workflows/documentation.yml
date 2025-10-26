@@ -1,0 +1,273 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+jobs:
+  generate-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 9.0.x
+
+    - name: Install DocFX
+      run: dotnet tool install -g docfx
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Generate XML documentation
+      run: |
+        dotnet build Calculator.Server/Calculator.Server.csproj -c Release --no-restore -p:DocumentationFile=Calculator.Server.xml
+        dotnet build Calculator.Client/Calculator.Client.csproj -c Release --no-restore -p:DocumentationFile=Calculator.Client.xml
+
+    - name: Create DocFX config
+      run: |
+        cat << 'EOF' > docfx.json
+        {
+          "metadata": [
+            {
+              "src": [
+                {
+                  "files": [
+                    "Calculator.Server/**/*.csproj",
+                    "Calculator.Client/**/*.csproj"
+                  ]
+                }
+              ],
+              "dest": "api",
+              "disableGitFeatures": false,
+              "disableDefaultFilter": false
+            }
+          ],
+          "build": {
+            "content": [
+              {
+                "files": [
+                  "api/**.yml",
+                  "api/index.md"
+                ]
+              },
+              {
+                "files": [
+                  "README.md",
+                  "docs/**/*.md"
+                ]
+              }
+            ],
+            "resource": [
+              {
+                "files": [
+                  "images/**"
+                ]
+              }
+            ],
+            "dest": "_site",
+            "globalMetadataFiles": [],
+            "fileMetadataFiles": [],
+            "template": [
+              "default"
+            ],
+            "postProcessors": [],
+            "markdownEngineName": "markdig",
+            "noLangKeyword": false,
+            "keepFileLink": false,
+            "cleanupCacheHistory": false,
+            "disableGitFeatures": false
+          }
+        }
+        EOF
+
+    - name: Create docs directory structure
+      run: |
+        mkdir -p docs/architecture
+        mkdir -p docs/api
+        mkdir -p docs/tutorials
+        mkdir -p images
+
+    - name: Generate Architecture Documentation
+      run: |
+        cat << 'EOF' > docs/architecture/overview.md
+        # Architecture Overview
+        
+        ## System Architecture
+        
+        The Calculator RabbitMQ system consists of three main components:
+        
+        1. **Calculator.Server** - Processes calculation requests via RabbitMQ
+        2. **Calculator.Client** - Sends calculation requests and receives responses
+        3. **RabbitMQ** - Message broker handling communication between client and server
+        
+        ## Message Flow
+        
+        ```
+        Client -> RabbitMQ (Request Queue) -> Server
+        Server -> RabbitMQ (Response Queue) -> Client
+        ```
+        
+        ## Key Features
+        
+        - Asynchronous message processing
+        - Request/Response correlation
+        - Error handling and timeouts
+        - Scalable architecture
+        - Docker containerization
+        
+        ## Technology Stack
+        
+        - .NET 9.0
+        - RabbitMQ 3.13
+        - Docker & Docker Compose
+        - xUnit for testing
+        EOF
+
+    - name: Generate API Documentation
+      run: |
+        cat << 'EOF' > docs/api/client-api.md
+        # Client API Reference
+        
+        ## ICalculatorClientService
+        
+        Main interface for performing calculations via RabbitMQ.
+        
+        ### Methods
+        
+        - `Task<double> AddAsync(double num1, double num2)`
+        - `Task<double> SubtractAsync(double num1, double num2)`
+        - `Task<double> MultiplyAsync(double num1, double num2)`
+        - `Task<double> DivideAsync(double num1, double num2)`
+        
+        ### Configuration
+        
+        Configure via `appsettings.json`:
+        
+        ```json
+        {
+          "RabbitMQ": {
+            "HostName": "localhost",
+            "Port": 5672,
+            "UserName": "guest",
+            "Password": "guest",
+            "RequestTimeoutMs": 30000
+          }
+        }
+        ```
+        EOF
+
+    - name: Generate Tutorial Documentation
+      run: |
+        cat << 'EOF' > docs/tutorials/getting-started.md
+        # Getting Started Guide
+        
+        ## Prerequisites
+        
+        - .NET 9.0 SDK
+        - Docker (recommended) or RabbitMQ server
+        
+        ## Quick Start with Docker
+        
+        1. Clone the repository:
+           ```bash
+           git clone https://github.com/pskumar81/Calculator.RabbitMQ.git
+           cd Calculator.RabbitMQ
+           ```
+        
+        2. Start the system:
+           ```bash
+           # On Windows
+           start-system.bat
+           
+           # On Linux/Mac
+           ./start-system.sh
+           ```
+        
+        3. Run the client:
+           ```bash
+           docker-compose run --rm calculator-client
+           ```
+        
+        ## Local Development
+        
+        1. Start RabbitMQ:
+           ```bash
+           docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3.13-management
+           ```
+        
+        2. Start the server:
+           ```bash
+           cd Calculator.Server
+           dotnet run
+           ```
+        
+        3. Start the client:
+           ```bash
+           cd Calculator.Client
+           dotnet run
+           ```
+        
+        ## Testing
+        
+        ```bash
+        dotnet test
+        ```
+        EOF
+
+    - name: Create index page
+      run: |
+        cat << 'EOF' > docs/index.md
+        # Calculator RabbitMQ Documentation
+        
+        Welcome to the Calculator RabbitMQ documentation. This system demonstrates a distributed calculator implementation using RabbitMQ for message-based communication.
+        
+        ## Quick Links
+        
+        - [Architecture Overview](architecture/overview.md)
+        - [Getting Started](tutorials/getting-started.md)
+        - [Client API Reference](api/client-api.md)
+        - [GitHub Repository](https://github.com/pskumar81/Calculator.RabbitMQ)
+        
+        ## Features
+        
+        - ✅ Distributed calculator service
+        - ✅ RabbitMQ message-based communication
+        - ✅ Docker containerization
+        - ✅ Comprehensive testing
+        - ✅ CI/CD automation
+        - ✅ Performance monitoring
+        - ✅ Security scanning
+        EOF
+
+    - name: Build documentation
+      run: |
+        docfx docfx.json --serve &
+        sleep 5
+        pkill -f docfx || true
+
+    - name: Deploy to GitHub Pages
+      if: github.ref == 'refs/heads/master'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./_site
+        publish_branch: gh-pages
+        allow_empty_commit: false
+        keep_files: false
+        force_orphan: true
+        enable_jekyll: false

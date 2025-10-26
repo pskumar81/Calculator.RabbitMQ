@@ -1,0 +1,233 @@
+name: Issue and PR Automation
+
+on:
+  issues:
+    types: [opened, edited, closed, reopened]
+  pull_request:
+    types: [opened, edited, closed, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+jobs:
+  label-issues:
+    if: github.event_name == 'issues' && github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+    - name: Label new issues
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const title = context.payload.issue.title.toLowerCase();
+          const body = context.payload.issue.body.toLowerCase();
+          const labels = [];
+          
+          // Auto-label based on content
+          if (title.includes('bug') || body.includes('bug') || body.includes('error')) {
+            labels.push('bug');
+          }
+          if (title.includes('feature') || title.includes('enhancement') || body.includes('feature')) {
+            labels.push('enhancement');
+          }
+          if (title.includes('doc') || body.includes('documentation')) {
+            labels.push('documentation');
+          }
+          if (title.includes('test') || body.includes('testing')) {
+            labels.push('testing');
+          }
+          if (title.includes('performance') || body.includes('performance')) {
+            labels.push('performance');
+          }
+          if (title.includes('security') || body.includes('security')) {
+            labels.push('security');
+          }
+          if (title.includes('docker') || body.includes('docker') || body.includes('container')) {
+            labels.push('docker');
+          }
+          if (title.includes('rabbitmq') || body.includes('rabbitmq') || body.includes('message')) {
+            labels.push('rabbitmq');
+          }
+          
+          if (labels.length === 0) {
+            labels.push('triage');
+          }
+          
+          if (labels.length > 0) {
+            await github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: labels
+            });
+          }
+
+  auto-assign-reviewers:
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+    - name: Auto-assign reviewers
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { owner, repo } = context.repo;
+          const pr = context.payload.pull_request;
+          
+          // Don't assign if it's a draft PR
+          if (pr.draft) {
+            return;
+          }
+          
+          // Auto-assign maintainers as reviewers (adjust as needed)
+          const reviewers = ['pskumar81']; // Add other maintainers
+          
+          try {
+            await github.rest.pulls.requestReviewers({
+              owner,
+              repo,
+              pull_number: pr.number,
+              reviewers: reviewers.filter(r => r !== pr.user.login) // Don't assign the author
+            });
+          } catch (error) {
+            console.log('Could not assign reviewers:', error.message);
+          }
+
+  label-prs:
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+    - name: Label pull requests
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const title = context.payload.pull_request.title.toLowerCase();
+          const body = context.payload.pull_request.body?.toLowerCase() || '';
+          const labels = [];
+          
+          // Auto-label based on content
+          if (title.includes('fix') || title.includes('bug')) {
+            labels.push('bug');
+          }
+          if (title.includes('feat') || title.includes('feature') || title.includes('add')) {
+            labels.push('enhancement');
+          }
+          if (title.includes('doc') || body.includes('documentation')) {
+            labels.push('documentation');
+          }
+          if (title.includes('test') || body.includes('test')) {
+            labels.push('testing');
+          }
+          if (title.includes('perf') || title.includes('performance')) {
+            labels.push('performance');
+          }
+          if (title.includes('security')) {
+            labels.push('security');
+          }
+          if (title.includes('docker') || body.includes('docker')) {
+            labels.push('docker');
+          }
+          if (title.includes('ci') || title.includes('cd') || body.includes('workflow')) {
+            labels.push('ci/cd');
+          }
+          
+          // Check file changes for automatic labeling
+          const { data: files } = await github.rest.pulls.listFiles({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.payload.pull_request.number
+          });
+          
+          const hasServerChanges = files.some(f => f.filename.startsWith('Calculator.Server/'));
+          const hasClientChanges = files.some(f => f.filename.startsWith('Calculator.Client/'));
+          const hasDockerChanges = files.some(f => f.filename.includes('Dockerfile') || f.filename.includes('docker-compose'));
+          const hasWorkflowChanges = files.some(f => f.filename.startsWith('.github/workflows/'));
+          const hasTestChanges = files.some(f => f.filename.includes('Test'));
+          
+          if (hasServerChanges) labels.push('server');
+          if (hasClientChanges) labels.push('client');
+          if (hasDockerChanges) labels.push('docker');
+          if (hasWorkflowChanges) labels.push('ci/cd');
+          if (hasTestChanges) labels.push('testing');
+          
+          if (labels.length > 0) {
+            await github.rest.issues.addLabels({
+              issue_number: context.payload.pull_request.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: labels
+            });
+          }
+
+  welcome-comment:
+    if: github.event_name == 'issues' && github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+    - name: Welcome new contributors
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { owner, repo } = context.repo;
+          const issueAuthor = context.payload.issue.user.login;
+          
+          // Check if this is the user's first issue
+          const { data: issues } = await github.rest.issues.listForRepo({
+            owner,
+            repo,
+            creator: issueAuthor,
+            state: 'all'
+          });
+          
+          if (issues.length === 1) {
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner,
+              repo,
+              body: `👋 Hello @${issueAuthor}! Thank you for opening your first issue in the Calculator RabbitMQ project.
+              
+              **Quick Tips:**
+              - Make sure to provide as much detail as possible
+              - Include steps to reproduce if it's a bug
+              - Check existing issues to avoid duplicates
+              - Join our community discussions for questions
+              
+              We'll review your issue soon. Welcome to the project! 🚀`
+            });
+          }
+
+  stale-issue-management:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+    - name: Close stale issues and PRs
+      uses: actions/stale@v9
+      with:
+        stale-issue-message: |
+          This issue has been automatically marked as stale because it has not had recent activity.
+          It will be closed if no further activity occurs. Thank you for your contributions.
+        stale-pr-message: |
+          This pull request has been automatically marked as stale because it has not had recent activity.
+          It will be closed if no further activity occurs. Thank you for your contributions.
+        close-issue-message: |
+          This issue was automatically closed because it has been stale for too long.
+          If you believe this issue is still relevant, please reopen it with updated information.
+        close-pr-message: |
+          This pull request was automatically closed because it has been stale for too long.
+          If you believe this PR is still relevant, please reopen it and address any conflicts.
+        days-before-stale: 30
+        days-before-close: 7
+        exempt-issue-labels: 'pinned,security,enhancement'
+        exempt-pr-labels: 'pinned,security,work-in-progress'
