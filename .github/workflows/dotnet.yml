@@ -35,6 +35,12 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 9.0.x
+
+    - name: Verify Docker and Docker Compose
+      run: |
+        docker --version
+        docker compose version
+        docker info
         
     - name: Restore dependencies
       run: dotnet restore
@@ -47,14 +53,16 @@ jobs:
       
     - name: Build Docker images
       run: |
+        echo "Building Calculator Server Docker image..."
         docker build -f Calculator.Server/Dockerfile -t calculator-server:latest .
+        echo "Building Calculator Client Docker image..."
         docker build -f Calculator.Client/Dockerfile -t calculator-client:latest .
         
     - name: Test Docker Compose setup
       run: |
-        # Test that docker-compose can build and start services
-        docker-compose config
-        docker-compose build
+        echo "Validating docker-compose configuration..."
+        docker compose config --quiet
+        echo "Docker Compose configuration is valid"
       
     - name: Upload test results
       uses: actions/upload-artifact@v4
